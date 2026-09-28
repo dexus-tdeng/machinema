@@ -9,3 +9,89 @@ The goal of machinema is to build a platform that can be used to collect, proces
     1. Storage: Store the raw data, processed data, and model data. 
     2. Delivery: Deliver the processed data and model data to users for training AI models. 
     3. Transfer: Transfer of data from devices to the cloud and cross-border transfer. 
+
+---
+
+## Detailed System Architecture & Extensions
+
+To make Machinema an end-to-end infrastructure connecting real-world human data directly to Physical AI and general-purpose robotics, the following architectural extensions expand upon the core components above.
+
+```mermaid
+flowchart TD
+    subgraph S1["1. Multi-Sensor Data Collection"]
+        Sensors["Wearable Sensor Rig (Cams, Audio, IMU, EMG)"]
+        Sync["Hardware Clock & PTP Sync (IEEE 1588 / Genlock)"]
+        Sensors --> Sync
+    end
+
+    Sync --> Ingestion["Edge Hub Ingestion & Logging (MCAP / Raw Streams)"]
+
+    subgraph S2["2. Quality, Anonymization & Governance"]
+        Ingestion --> Gate{"Quality & Privacy Gate"}
+        Gate --> Blur["PII Redaction (Face, Screen & Plate Blurring)"]
+        Gate --> Filter["Quality Filter (Motion Blur & Dropouts)"]
+        Gate --> Sovereignty["Data Sovereignty (Regional Edge Sanitization)"]
+    end
+
+    Blur & Filter & Sovereignty --> ProcessingHub["Curated Multimodal Streams"]
+
+    subgraph S3["3. Processing & Kinematic Retargeting"]
+        ProcessingHub --> Perception["Perception & Semantic Engine"]
+        Perception --> VLM["Dense VLM Narrations & Sub-goals"]
+        Perception --> Det["3D Object Bounding Boxes & Poses"]
+        Perception --> HOI["Hand-Object Interaction (HOI)"]
+        Perception --> SLAM["Egocentric vSLAM Trajectories"]
+
+        ProcessingHub --> Retargeting["Kinematic Retargeting Engine"]
+        Retargeting --> EEF["7-DoF Cartesian EEF (6-DoF Pose + 1D Gripper)"]
+        Retargeting --> Dexterous["Dexterous Multi-Finger IK (MANO -> Allegro/LEAP)"]
+        Retargeting --> Humanoid["Whole-Body Humanoid Mapping (SMPL-X -> Robot Joints)"]
+    end
+
+    subgraph S4["4. Content Management & Export"]
+        VLM & Det & HOI & SLAM & EEF & Dexterous & Humanoid --> CMS["Machinema CMS & Catalog"]
+        CMS --> Formats["Standardized Robotics Schemas (RLDS, LeRobot, HDF5/Zarr, MCAP)"]
+    end
+
+    subgraph S5["5. Simulation & Physical AI"]
+        Formats --> Sim["Real2Sim Digital Twins (3DGS & OpenUSD for Isaac Sim/MuJoCo)"]
+        Formats --> Train["Physical AI Policy Training (VLA, Diffusion Policy, ACT)"]
+        Train --> Deploy["Real-World Robot Deployment"]
+        Deploy -.->|"Telemetry & Failure Feedback"| Sensors
+    end
+```
+
+### 1. Hardware Synchronization & Spatial Calibration
+* **Microsecond Temporal Sync:** Cameras (30–60 FPS), IMUs (200–1000 Hz), EMGs (1–2 kHz), and audio must share a unified timeline. Employs hardware Genlock, PTP (IEEE 1588), and synchronized hardware clock timestamps on the wearable edge compute hub.
+* **Spatial Calibration Pipeline:** Dynamic and factory routines for intrinsic camera calibration (fisheye/pinhole) and multi-camera rig extrinsics ($T_{\text{cam}_i \to \text{cam}_j}$), as well as visual-inertial (Camera-to-IMU) calibration matrices.
+
+### 2. Kinematic Retargeting Engine (Human-to-Robot Bridge)
+Raw perception outputs describe what a human does, but physical AI requires actionable control targets ($a_t$). The retargeting engine converts tracked human kinematics into robot-executable action spaces:
+* **7-DoF Cartesian End-Effector (EEF):** Maps human wrist 6-DoF trajectories into delta poses $[\Delta x, \Delta y, \Delta z, \Delta \text{roll}, \Delta \text{pitch}, \Delta \text{yaw}]$, and maps finger-pinch aperture to normalized gripper commands $[0.0, 1.0]$ for parallel-jaw grippers.
+* **Dexterous Multi-Finger Retargeting:** Maps 21-joint MANO hand poses to commercial multi-finger robot hands (e.g., Allegro Hand, LEAP Hand, Shadow Hand) using constrained optimization and inverse kinematics (IK).
+* **Whole-Body Humanoid Mapping:** Maps full-body motion capture / SMPL-X skeletons to bipedal humanoid degrees of freedom (e.g., Unitree, Figure, Atlas).
+
+### 3. Data Quality Assurance & Human-in-the-Loop (HITL) Curation
+* **Automated Sensor Health Filtering:** Automatic rejection of segments with severe motion blur, tracking drops, camera occlusions, or sensor packet loss.
+* **VLM Hallucination & Contact Verification:** Cross-modal grounding to ensure VLM captions accurately reflect physical contact states (e.g., distinguishing near-touches from actual grasps using point tracking and optical flow).
+* **HITL Web Studio:** Web-based interface for human reviewers to inspect, trim trajectory endpoints, and correct sub-goal boundaries and action labels.
+
+### 4. Privacy, Anonymization & Data Governance
+* **Automated PII Redaction:** In-stream and batch anonymization of bystander faces, vehicle license plates, computer monitors/screens, and sensitive documents. Audio de-identification and bystander speech muting.
+* **Cross-Border Compliance (Data Sovereignty):** Multi-region edge architecture compliant with GDPR, CCPA, and data sovereignty laws (e.g., China PIPL/DSL). Raw video remains in-region, while sanitized, anonymized action trajectories and embeddings can be synced globally.
+
+### 5. Standardized Robotics Data Formats & Export
+To allow out-of-the-box training across open-source and proprietary robotics frameworks, data is packaged into native robotics schemas:
+* **RLDS (Robot Learning Dataset Standard):** Standard format for Open X-Embodiment, Octo, and RT-2.
+* **LeRobot (Hugging Face):** Native Apache Parquet + MP4 format for lightweight, community-accessible policy training.
+* **HDF5 / Zarr:** High-throughput chunked formats for Diffusion Policy and Action Chunking with Transformers (ACT).
+* **MCAP:** ROS 2 compatible container format for full-bandwidth multimodal sensor replay.
+
+### 6. Simulation Bridge & Digital Twins (Real2Sim)
+* **3D Scene Reconstruction:** Automatic generation of photorealistic 3D environments from wearable video passes using 3D Gaussian Splatting (3DGS) and NeRFs.
+* **Physics-Ready Simulation Assets:** Automatic extraction of manipulated objects into OpenUSD and URDF assets for **NVIDIA Isaac Sim / Isaac Lab, MuJoCo, and SAPIEN**.
+* **Zero-Cost Policy Evaluation:** Enables safe, accelerated simulation replay and domain randomization prior to real-world robot deployment.
+
+### 7. Benchmarking Suite & Closed-Loop Telemetry
+* **Evaluation Splits:** Standardized benchmark suites evaluating policies across unseen environments, novel object geometries, and out-of-distribution language instructions.
+* **Closed-Loop Edge Runtime:** A lightweight robot deployment SDK that streams hardware execution telemetry and failure modes back to Machinema, driving active data collection loops.
