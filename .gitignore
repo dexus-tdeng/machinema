@@ -1,0 +1,6 @@
+# Agent skills & internal runtime
+.agents/
+
+# Operating System metadata
+.DS_Store
+Thumbs.db
